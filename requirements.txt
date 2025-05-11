@@ -1,0 +1,11 @@
+# Core dependencies
+streamlit>=1.45.0         # Web app framework
+pandas>=1.4.0             # Data handling
+numpy>=1.26.0             # Numerical operations
+pyarrow>=8.0.0            # For reading Parquet files
+Pillow>=9.0.0             # Image handling for logos
+
+# Machine learning
+scikit-learn>=1.2.0       # Preprocessing and pipeline
+xgboost>=1.7.0            # Gradient boosting model
+joblib>=1.2.0             # Model and pipeline serialization
