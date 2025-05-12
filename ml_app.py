@@ -2,52 +2,179 @@ import streamlit as st
 import pandas as pd
 import joblib
 from PIL import Image
+import numpy as np
 
-# Load the trained pipeline
-pipeline = joblib.load("model_pipeline.pkl")
+# Set page config
+st.set_page_config(
+    page_title="Car Price Predictor",
+    page_icon="🚗",
+    layout="wide"
+)
+
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        color: #1E3A8A;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .sub-header {
+        font-size: 1.5rem;
+        color: #2563EB;
+        margin-bottom: 1rem;
+    }
+    .result-text {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #047857;
+        text-align: center;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        background-color: #ECFDF5;
+    }
+    .section {
+        padding: 1rem;
+        background-color: #F3F4F6;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Function to load models and data
+@st.cache_resource
+def load_models():
+    pipeline = joblib.load("improved_model_pipeline.pkl")
+    make_model_mapping = joblib.load("make_model_mapping.pkl")
+    return pipeline, make_model_mapping
+
+try:
+    # Load the trained pipeline and make-model mapping
+    pipeline, make_model_mapping = load_models()
+except Exception as e:
+    st.error(f"Error loading models: {e}")
+    st.stop()
 
 # Extract categories for dynamic dropdowns
 ohe = pipeline.named_steps['preproc'].named_transformers_['cat']
-cat_cols = ['gearbox','energy','make','model']
+cat_cols = ['make', 'model', 'gearbox', 'energy']
 categories = dict(zip(cat_cols, ohe.categories_))
 
-# Display logo (place 'logo.png' in the same folder)
-logo = Image.open("logo.png")
-st.image(logo, width=200)
+# Display logo and title
+try:
+    logo = Image.open("logo.png")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image(logo, width=250)
+except:
+    pass  # No logo available
 
-# App title
-st.title("Vehicle Price Prediction")
+st.markdown("<h1 class='main-header'>Car Price Predictor</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center'>Get an instant estimate of your car's market value</p>", unsafe_allow_html=True)
 
-# User inputs: real-world values
-mileage    = st.number_input("Mileage (km)",               0, 1_000_000, 50_000, step=1_000)
-year       = st.number_input("Year of Registration",      1980, 2025,   2015,   step=1)
-hp         = st.number_input("Horsepower (hp)",           10,   1_000,   100,   step=10)
-avg_price  = st.number_input("Average Market Price (€)", 0,   200_000, 20_000, step=500)
-max_price  = st.number_input("Maximum Market Price (€)",  0,   300_000, 25_000, step=500)
-min_price  = st.number_input("Minimum Market Price (€)",  0,   150_000, 15_000, step=500)
+# Create two columns for better layout
+col1, col2 = st.columns(2)
 
-gearbox = st.selectbox("Gearbox Type", categories['gearbox'])
-energy  = st.selectbox("Fuel Type",    categories['energy'])
-make    = st.selectbox("Make",         categories['make'])
-model   = st.selectbox("Model",        categories['model'])
+with col1:
+    st.markdown("<div class='section'>", unsafe_allow_html=True)
+    st.markdown("<h2 class='sub-header'>Car Details</h2>", unsafe_allow_html=True)
+    
+    # Make dropdown
+    make = st.selectbox("Make", sorted(categories['make']))
+    
+    # Filter models based on selected make
+    available_models = make_model_mapping.get(make, [])
+    model = st.selectbox("Model", sorted(available_models))
+    
+    # Year with min and max limits
+    current_year = 2025
+    year = st.slider("Year of Registration", 2000, current_year, current_year - 3)
+    
+    # Calculate age for the model
+    age = current_year - year
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Prediction button
-if st.button("Predict Price"):
-    # Construct input dataframe
-    data = {
-        'gearbox':   [gearbox],
-        'energy':    [energy],
-        'make':      [make],
-        'model':     [model],
-        'mileage':   [mileage],
-        'age':       [2025 - year],  # convert to age
-        'hp':        [hp],
-        'AVG_price': [avg_price],
-        'MIN_price': [min_price],
-        'MAX_price': [max_price],
-    }
-    input_df = pd.DataFrame(data)
+with col2:
+    st.markdown("<div class='section'>", unsafe_allow_html=True)
+    st.markdown("<h2 class='sub-header'>Technical Specifications</h2>", unsafe_allow_html=True)
+    
+    # Other inputs
+    mileage = st.number_input("Mileage (km)", 0, 500_000, 30_000, step=1_000)
+    hp = st.slider("Horsepower (hp)", 50, 500, 120)
+    
+    gearbox = st.selectbox("Gearbox Type", categories['gearbox'])
+    energy = st.selectbox("Fuel Type", categories['energy'])
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # Predict
-    prediction = pipeline.predict(input_df)[0]
-    st.success(f"Estimated Price: €{prediction:,.0f}")
+# Add a divider
+st.markdown("---")
+
+# Center the prediction button
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    predict_button = st.button("Calculate Price Estimate", use_container_width=True)
+
+# Prediction logic
+if predict_button:
+    try:
+        # Construct input dataframe with the selected features
+        data = {
+            'make': [make],
+            'model': [model],
+            'gearbox': [gearbox],
+            'energy': [energy],
+            'mileage': [mileage],
+            'age': [age],
+            'hp': [hp]
+        }
+        input_df = pd.DataFrame(data)
+        
+        # Show a spinner while predicting
+        with st.spinner('Calculating price...'):
+            # Predict
+            prediction = pipeline.predict(input_df)[0]
+            
+            # Format prediction
+            formatted_prediction = f"€{prediction:,.0f}"
+            
+            # Display result
+            st.markdown("<div class='result-text'>", unsafe_allow_html=True)
+            st.markdown(f"### Estimated Price: {formatted_prediction}", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+            # Show price range for better context (estimated ±15%)
+            lower_bound = prediction * 0.85
+            upper_bound = prediction * 1.15
+            
+            st.info(f"Price range: €{lower_bound:,.0f} - €{upper_bound:,.0f}")
+            
+            # Add explanation of factors affecting the price
+            st.markdown("### Key Price Factors")
+            
+            # Create factors explanation
+            factors = {
+                "Age": f"{age} years old" + (" (newer cars typically cost more)" if age < 5 else ""),
+                "Mileage": f"{mileage:,} km" + (" (lower mileage typically increases value)" if mileage < 50000 else ""),
+                "Make & Model": f"{make} {model}",
+                "Fuel Type": energy,
+                "Gearbox": gearbox,
+                "Horsepower": f"{hp} hp"
+            }
+            
+            # Display factors as a nice looking table
+            factor_df = pd.DataFrame({"Factor": factors.keys(), "Value": factors.values()})
+            st.table(factor_df)
+            
+    except Exception as e:
+        st.error(f"Error during prediction: {e}")
+
+# Add some information at the bottom
+st.markdown("---")
+st.markdown("""
+**Note**: This price estimate is based on our advanced machine learning model trained on thousands of vehicle listings. 
+Actual market prices may vary based on additional factors such as vehicle condition, optional equipment, color, and local market demand.
+""")
