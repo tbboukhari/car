@@ -1,4 +1,4 @@
-# train_model.py
+
 
 import pandas as pd
 import numpy as np
@@ -9,56 +9,71 @@ from sklearn.preprocessing import RobustScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from xgboost import XGBRegressor
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-# 1️⃣ Chargement des données
+# Load the data
 df = pd.read_parquet('DS-USED-FOR-V.03-MODEL.parquet', engine='pyarrow')
 
-# 2️⃣ Nettoyage basique & feature engineering
-df = df.dropna(subset=['price','mileage','year','hp','AVG_price','MIN_price','MAX_price'])
-df['age'] = 2025 - df['year']
+# Basic cleaning & feature engineering
+df = df.dropna(subset=['price', 'mileage', 'year', 'hp'])
+df['age'] = 2025 - df['year']  # Calculate age from year
 
-# 3️⃣ Définition des colonnes
-cat_cols = ['gearbox','energy','make','model']
-num_cols = ['mileage','age','hp','AVG_price','MIN_price','MAX_price']
+# Define the most relevant columns for users
+cat_cols = ['make', 'model', 'gearbox', 'energy']  # Most relevant categorical features
+num_cols = ['mileage', 'age', 'hp']                # Most relevant numerical features
 
-# 4️⃣ Séparation X / y
+# Split features and target
 X = df[cat_cols + num_cols]
 y = df['price']
 
-# 5️⃣ Train/test split
+# Train/test split
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=55
 )
 
-# 6️⃣ Préprocessing pipeline
+# Create preprocessing pipeline
 preprocessor = ColumnTransformer([
     ('num', RobustScaler(), num_cols),
-    # Note : à partir de sklearn 1.2, `sparse` → `sparse_output`
     ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols),
 ], remainder='drop')
 
-# 7️⃣ Pipeline complète avec XGBoost
+# Full pipeline with XGBoost
 pipeline = Pipeline([
     ('preproc', preprocessor),
     ('xgb', XGBRegressor(
         n_estimators=500,
-        max_depth=10,
-        learning_rate=0.1,
+        max_depth=8,
+        learning_rate=0.05,
         colsample_bytree=0.8,
+        subsample=0.8,
         random_state=55,
-        tree_method='hist'
+        tree_method='hist',
+        eval_metric='rmse'
     ))
 ])
 
-# 8️⃣ Entraînement
+# Train the model
+print("Training model...")
 pipeline.fit(X_train, y_train)
 
-# 9️⃣ Évaluation
+# Model evaluation
 preds = pipeline.predict(X_test)
-print(f"MAE  : {mean_absolute_error(y_test, preds):.2f}")
-print(f"RMSE : {np.sqrt(mean_squared_error(y_test, preds)):.2f}")
+mae = mean_absolute_error(y_test, preds)
+rmse = np.sqrt(mean_squared_error(y_test, preds))
+r2 = r2_score(y_test, preds)
 
-# 🔟 Sauvegarde du pipeline
-joblib.dump(pipeline, "model_pipeline.pkl")
-print("👉 Pipeline saved to model_pipeline.pkl")
+print(f"Model Performance:")
+print(f"MAE: €{mae:.2f}")
+print(f"RMSE: €{rmse:.2f}")
+print(f"R²: {r2:.4f}")
+
+# Create a mapping of make to its available models
+make_model_mapping = {}
+for make in df['make'].unique():
+    make_model_mapping[make] = df[df['make'] == make]['model'].unique().tolist()
+
+# Save the pipeline and the make-model mapping
+joblib.dump(pipeline, "improved_model_pipeline.pkl")
+joblib.dump(make_model_mapping, "make_model_mapping.pkl")
+
+print("✅ Model and make-model mapping saved successfully!")
